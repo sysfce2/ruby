@@ -493,7 +493,7 @@ range_step(int argc, VALUE *argv, VALUE range)
     const VALUE e_num_p = rb_obj_is_kind_of(e, rb_cNumeric);
     // For backward compatibility reasons (conforming to behavior before 3.4), String/Symbol
     // supports both old behavior ('a'..).step(1) and new behavior ('a'..).step('a')
-    // Hence the additional conversion/addional checks.
+    // Hence the additional conversion/additional checks.
     const VALUE str_b = rb_check_string_type(b);
     const VALUE sym_b = SYMBOL_P(b) ? rb_sym2str(b) : Qnil;
 
@@ -1471,7 +1471,7 @@ range_last(int argc, VALUE *argv, VALUE range)
  *    min(n) {|a, b| ... } -> array
  *
  *  Returns the minimum value in +self+,
- *  using method <tt><=></tt> or a given block for comparison.
+ *  using method <tt>#<=></tt> or a given block for comparison.
  *
  *  With no argument and no block given,
  *  returns the minimum-valued element of +self+.
@@ -1579,7 +1579,7 @@ range_min(int argc, VALUE *argv, VALUE range)
  *    max(n) {|a, b| ... } -> array
  *
  *  Returns the maximum value in +self+,
- *  using method <tt><=></tt> or a given block for comparison.
+ *  using method <tt>#<=></tt> or a given block for comparison.
  *
  *  With no argument and no block given,
  *  returns the maximum-valued element of +self+.
@@ -1698,10 +1698,10 @@ range_max(int argc, VALUE *argv, VALUE range)
  *    minmax {|a, b| ... } -> [object, object]
  *
  *  Returns a 2-element array containing the minimum and maximum value in +self+,
- *  either according to comparison method <tt><=></tt> or a given block.
+ *  either according to comparison method <tt>#<=></tt> or a given block.
  *
  *  With no block given, returns the minimum and maximum values,
- *  using <tt><=></tt> for comparison:
+ *  using <tt>#<=></tt> for comparison:
  *
  *    (1..4).minmax     # => [1, 4]
  *    (1...4).minmax    # => [1, 3]
@@ -2151,7 +2151,7 @@ static int r_cover_range_p(VALUE range, VALUE beg, VALUE end, VALUE val);
  *  Returns +false+ if either:
  *
  *  - The begin value of +self+ is larger than its end value.
- *  - An internal call to <tt><=></tt> returns +nil+;
+ *  - An internal call to <tt>#<=></tt> returns +nil+;
  *    that is, the operands are not comparable.
  *
  *  Beginless ranges cover all values of the same type before the end,
@@ -2399,7 +2399,7 @@ empty_region_p(VALUE beg, VALUE end, int excl)
  *
  *    (1..3).overlap?(1)         # TypeError
  *
- *  Returns +false+ if an internal call to <tt><=></tt> returns +nil+;
+ *  Returns +false+ if an internal call to <tt>#<=></tt> returns +nil+;
  *  that is, the operands are not comparable.
  *
  *    (1..3).overlap?('a'..'d')  # => false
@@ -2477,7 +2477,7 @@ range_overlap(VALUE range, VALUE other)
         /* if both begin values are equal, no more comparisons needed */
         if (rb_cmpint(cmp, self_beg, other_beg) == 0) return Qtrue;
     }
-    else if (NIL_P(self_beg) && NIL_P(other_beg)) {
+    else if (NIL_P(self_beg) && !NIL_P(self_end) && NIL_P(other_beg)) {
         VALUE cmp = rb_funcall(self_end, id_cmp, 1, other_end);
         return RBOOL(!NIL_P(cmp));
     }
@@ -2502,7 +2502,7 @@ range_overlap(VALUE range, VALUE other)
  *     (1...4).to_a     # => [1, 2, 3]
  *     ('a'...'d').to_a # => ["a", "b", "c"]
  *
- * A range may be created using method Range.new:
+ * - Method Range.new:
  *
  *   # Ranges that by default include the given end value.
  *   Range.new(1, 4).to_a     # => [1, 2, 3, 4]
@@ -2589,7 +2589,7 @@ range_overlap(VALUE range, VALUE other)
  * == Ranges and Other Classes
  *
  * An object may be put into a range if its class implements
- * instance method <tt><=></tt>.
+ * instance method <tt>#<=></tt>.
  * Ruby core classes that do so include Array, Complex, File::Stat,
  * Float, Integer, Kernel, Module, Numeric, Rational, String, Symbol, and Time.
  *
@@ -2621,15 +2621,15 @@ range_overlap(VALUE range, VALUE other)
  * == Ranges and User-Defined Classes
  *
  * A user-defined class that is to be used in a range
- * must implement instance <tt><=></tt>;
+ * must implement instance method <tt>#<=></tt>;
  * see Integer#<=>.
  * To make iteration available, it must also implement
  * instance method +succ+; see Integer#succ.
  *
- * The class below implements both <tt><=></tt> and +succ+,
+ * The class below implements both <tt>#<=></tt> and +succ+,
  * and so can be used both to construct ranges and to iterate over them.
  * Note that the Comparable module is included
- * so the <tt>==</tt> method is defined in terms of <tt><=></tt>.
+ * so the <tt>==</tt> method is defined in terms of <tt>#<=></tt>.
  *
  *   # Represent a string of 'X' characters.
  *   class Xs
