@@ -33,6 +33,7 @@
 #include "internal/variable.h"
 #include "iseq.h"
 #include "rjit.h"
+#include "symbol.h" // This includes a macro for a more performant rb_id2sym.
 #include "yjit.h"
 #include "ruby/st.h"
 #include "ruby/vm.h"
@@ -3104,20 +3105,16 @@ ruby_vm_destruct(rb_vm_t *vm)
             rb_id_table_free(vm->constant_cache);
             st_free_table(vm->unused_block_warning_table);
 
-            if (th) {
-                xfree(th->nt);
-                th->nt = NULL;
-            }
+            xfree(th->nt);
+            th->nt = NULL;
 
 #ifndef HAVE_SETPROCTITLE
             ruby_free_proctitle();
 #endif
         }
         else {
-            if (th) {
-                rb_fiber_reset_root_local_storage(th);
-                thread_free(th);
-            }
+            rb_fiber_reset_root_local_storage(th);
+            thread_free(th);
         }
 
         struct rb_objspace *objspace = vm->gc.objspace;

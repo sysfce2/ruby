@@ -25,12 +25,6 @@ Note that each entry is kept to a minimum, see links for details.
 * Keyword arguments are no longer allowed in index assignment
   (e.g. `a[0, kw: 1] = 2`).  [[Bug #20218]]
 
-* GC.config added to allow setting configuration variables on the Garbage
-  Collector. [[Feature #20443]]
-
-* GC configuration parameter `rgengc_allow_full_mark` introduced. When `false`
-  GC will only mark young objects. Default is `true`. [[Feature #20443]]
-
 ## Core classes updates
 
 Note: We're only listing outstanding class updates.
@@ -39,6 +33,14 @@ Note: We're only listing outstanding class updates.
 
     * Exception#set_backtrace now accepts arrays of Thread::Backtrace::Location.
       Kernel#raise, Thread#raise and Fiber#raise also accept this new format. [[Feature #13557]]
+
+* GC
+
+    * GC.config added to allow setting configuration variables on the Garbage
+      Collector. [[Feature #20443]]
+
+    * GC configuration parameter `rgengc_allow_full_mark` introduced.  When `false`
+      GC will only mark young objects. Default is `true`.  [[Feature #20443]]
 
 * Hash
 
@@ -53,11 +55,11 @@ Note: We're only listing outstanding class updates.
 
 * IO::Buffer
 
-    * `IO::Buffer#copy` can release the GVL, allowing other threads to run while copying data. [[Feature #20902]]
+    * IO::Buffer#copy can release the GVL, allowing other threads to run while copying data. [[Feature #20902]]
 
 * Integer
 
-    * `Integer#**` used to return `Float::INFINITY` when the return value is large, but now returns an Integer.
+    * Integer#** used to return `Float::INFINITY` when the return value is large, but now returns an Integer.
       If the return value is extremely large, it raises an exception.
       [[Feature #20811]]
 
@@ -73,9 +75,9 @@ Note: We're only listing outstanding class updates.
       main Ractor.
       [[Feature #20627]]
 
-    * `Ractor.main?` is added. [[Feature #20627]]
+    * Ractor.main? is added. [[Feature #20627]]
 
-    * `Ractor.[key]` and Ractor.[val]=` is added to access the ractor local storage
+    * Ractor.[] and Ractor.[]= are added to access the ractor local storage
       of the current Ractor. [[Feature #20715]]
 
 * Range
@@ -91,19 +93,25 @@ Note: We're only listing outstanding class updates.
 
 * Rational
 
-    * `Rational#**` used to return `Float::INFINITY` or `Float::NAN`
+    * Rational#** used to return `Float::INFINITY` or `Float::NAN`
       when the numerator of the return value is large, but now returns an Integer.
       If it is extremely large, it raises an exception. [[Feature #20811]]
 
 * Refinement
 
-    * Removed deprecated method Refinement#refined_class. [[Feature #19714]]
+    * Removed deprecated method `Refinement#refined_class`. [[Feature #19714]]
 
 * RubyVM::AbstractSyntaxTree
 
     * Add RubyVM::AbstractSyntaxTree::Node#locations method which returns location objects
       associated with the AST node. [[Feature #20624]]
     * Add RubyVM::AbstractSyntaxTree::Location class which holds location information. [[Feature #20624]]
+
+* Time
+
+    * On Windows, now Time#zone encodes the system timezone name in UTF-8
+      instead of the active code page, if it contains non-ASCII characters.
+      [[Bug #20929]]
 
 * Warning
 
@@ -112,12 +120,38 @@ Note: We're only listing outstanding class updates.
 
 ## Stdlib updates
 
+* Net::HTTP
+
+    * Removed the following deprecated constants:
+        `Net::HTTP::ProxyMod`
+        `Net::NetPrivate::HTTPRequest`
+        `Net::HTTPInformationCode`
+        `Net::HTTPSuccessCode`
+        `Net::HTTPRedirectionCode`
+        `Net::HTTPRetriableCode`
+        `Net::HTTPClientErrorCode`
+        `Net::HTTPFatalErrorCode`
+        `Net::HTTPServerErrorCode`
+        `Net::HTTPResponseReceiver`
+        `Net::HTTPResponceReceiver`
+
+      These constants were deprecated from 2012.
+
 * Tempfile
 
     * The keyword argument `anonymous: true` is implemented for Tempfile.create.
       `Tempfile.create(anonymous: true)` removes the created temporary file immediately.
       So applications don't need to remove the file.
       [[Feature #20497]]
+
+* Timeout
+
+    * Reject negative values for Timeout.timeout. [[Bug #20795]]
+
+* URI
+
+    * Switched default parser to RFC 3986 compliant from RFC 2396 compliant.
+      [[Bug #19266]]
 
 * win32/sspi.rb
 
@@ -135,6 +169,7 @@ The following default gems are updated.
 * bundler 2.6.0.dev
 * date 3.4.1
 * delegate 0.4.0
+* did_you_mean 2.0.0
 * erb 4.0.4
 * error_highlight 0.7.0
 * etc 1.4.4
@@ -145,7 +180,7 @@ The following default gems are updated.
 * io-nonblock 0.3.1
 * ipaddr 1.2.7
 * irb 1.14.1
-* json 2.8.2
+* json 2.9.0
 * logger 1.6.2
 * net-http 0.6.0
 * open-uri 0.5.0
@@ -181,7 +216,7 @@ The following bundled gem is added.
 
 The following bundled gems are updated.
 
-* minitest 5.25.2
+* minitest 5.25.4
 * power_assert 2.0.4
 * rake 13.2.1
 * test-unit 3.6.4
@@ -191,7 +226,7 @@ The following bundled gems are updated.
 * net-imap 0.5.1
 * net-smtp 0.5.0
 * prime 0.1.3
-* rbs 3.6.1
+* rbs 3.7.0
 * typeprof 0.21.11
 * debug 1.9.2
 * racc 1.8.1
@@ -225,7 +260,7 @@ details of the default gems or bundled gems.
 
     * Use a single quote instead of a backtick as an opening quote. [[Feature #16495]]
     * Display a class name before a method name (only when the class has a permanent name). [[Feature #19117]]
-    * Extra rescue/ensure frames are no longer available on the backtrace. [[Feature #20275]]
+    * Extra `rescue`/`ensure` frames are no longer available on the backtrace. [[Feature #20275]]
     * Kernel#caller, Thread::Backtrace::Location’s methods, etc. are also changed accordingly.
 
         Old:
@@ -245,20 +280,20 @@ details of the default gems or bundled gems.
     * Symbol keys are displayed using the modern symbol key syntax: `"{user: 1}"`
     * Other keys now have spaces around `=>`: `'{"user" => 1}'`, while previously they didn't: `'{"user"=>1}'`
 
-* `Kernel#Float()` now accepts a decimal string with decimal part omitted. [[Feature #20705]]
+* Kernel#Float() now accepts a decimal string with decimal part omitted. [[Feature #20705]]
   ```
   Float("1.")    #=> 1.0 (previously, an ArgumentError was raised)
   Float("1.E-1") #=> 0.1 (previously, an ArgumentError was raised)
   ```
 
-* `String#to_f` now accepts a decimal string with decimal part omitted. [[Feature #20705]]
+* String#to_f now accepts a decimal string with decimal part omitted. [[Feature #20705]]
   Note that the result changes when an exponent is specified.
   ```
   "1.".to_f    #=> 1.0
   "1.E-1".to_f #=> 0.1 (previously, 1.0 was returned)
   ```
 
-* `Kernel#singleton_method` now returns methods in modules prepended to or included in the
+* Object#singleton_method now returns methods in modules prepended to or included in the
   receiver's singleton class. [[Bug #20620]]
   ```
   o = Object.new
@@ -288,13 +323,13 @@ details of the default gems or bundled gems.
 * Array#each is rewritten in Ruby for better performance [[Feature #20182]].
 
 * Alternative GC implementations can be loaded dynamically. Configure Ruby
-  `--with-shared-gc` to enable. Alternative GC modules can be loaded at runtime
+  `--with-modular-gc` to enable. Alternative GC libraries can be loaded at runtime
   using the environment variable `RUBY_GC_LIBRARY`.  [[Feature #20351]],
   [[Feature #20470]]
 
-* An experimental GC module is provided based on MMTk. Configure Ruby
-  `--with-shared-gc`, build as normal, then build the GC library: `make
-  shared-gc SHARED_GC=mmtk`. Enable with `RUBY_GC_LIBRARY=mmtk`.  This
+* An experimental GC library is provided based on MMTk. Configure Ruby
+  `--with-modular-gc`, build as normal, then build the GC library: `make
+  modular-gc MODULAR_GC=mmtk`. Enable with `RUBY_GC_LIBRARY=mmtk`.  This
   requires a working Rust compiler, and Cargo on the build machine.
   [[Feature #20860]]
 
@@ -320,6 +355,7 @@ details of the default gems or bundled gems.
 [Misc #18984]:    https://bugs.ruby-lang.org/issues/18984
 [Feature #19117]: https://bugs.ruby-lang.org/issues/19117
 [Feature #19236]: https://bugs.ruby-lang.org/issues/19236
+[Bug #19266]:     https://bugs.ruby-lang.org/issues/19266
 [Feature #19714]: https://bugs.ruby-lang.org/issues/19714
 [Bug #19918]:     https://bugs.ruby-lang.org/issues/19918
 [Bug #20064]:     https://bugs.ruby-lang.org/issues/20064
@@ -345,7 +381,9 @@ details of the default gems or bundled gems.
 [Feature #20715]: https://bugs.ruby-lang.org/issues/20715
 [Feature #20775]: https://bugs.ruby-lang.org/issues/20775
 [Feature #20782]: https://bugs.ruby-lang.org/issues/20782
+[Bug #20795]:     https://bugs.ruby-lang.org/issues/20795
 [Feature #20811]: https://bugs.ruby-lang.org/issues/20811
 [Feature #20860]: https://bugs.ruby-lang.org/issues/20860
 [Feature #20876]: https://bugs.ruby-lang.org/issues/20876
 [Feature #20902]: https://bugs.ruby-lang.org/issues/20902
+[Bug #20929]:     https://bugs.ruby-lang.org/issues/20929

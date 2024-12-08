@@ -10,7 +10,10 @@
  */
 #include "ruby/ruby.h"
 
-// `GC_IMPL_FN` is an implementation detail of `!USE_SHARED_GC` builds
+#ifdef BUILDING_MODULAR_GC
+# define GC_IMPL_FN
+#else
+// `GC_IMPL_FN` is an implementation detail of `!USE_MODULAR_GC` builds
 // to have the default GC in the same translation unit as gc.c for
 // the sake of optimizer visibility. It expands to nothing unless
 // you're the default GC.
@@ -18,10 +21,7 @@
 // For the default GC, do not copy-paste this when implementing
 // these functions. This takes advantage of internal linkage winning
 // when appearing first. See C99 6.2.2p4.
-#ifdef RB_AMALGAMATED_DEFAULT_GC
 # define GC_IMPL_FN static
-#else
-# define GC_IMPL_FN
 #endif
 
 // Bootup
@@ -106,6 +106,7 @@ GC_IMPL_FN size_t rb_gc_impl_gc_count(void *objspace_ptr);
 GC_IMPL_FN VALUE rb_gc_impl_latest_gc_info(void *objspace_ptr, VALUE key);
 GC_IMPL_FN VALUE rb_gc_impl_stat(void *objspace_ptr, VALUE hash_or_sym);
 GC_IMPL_FN VALUE rb_gc_impl_stat_heap(void *objspace_ptr, VALUE heap_name, VALUE hash_or_sym);
+GC_IMPL_FN const char *rb_gc_impl_active_gc_name(void);
 // Miscellaneous
 GC_IMPL_FN size_t rb_gc_impl_obj_flags(void *objspace_ptr, VALUE obj, ID* flags, size_t max);
 GC_IMPL_FN bool rb_gc_impl_pointer_to_heap_p(void *objspace_ptr, const void *ptr);
