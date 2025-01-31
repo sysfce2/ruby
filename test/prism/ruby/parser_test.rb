@@ -69,16 +69,23 @@ module Prism
 
       # https://github.com/whitequark/parser/issues/950
       "whitequark/dedenting_interpolating_heredoc_fake_line_continuation.txt",
+
+      # Contains an escaped multibyte character. This is supposed to drop to backslash
+      "seattlerb/regexp_escape_extended.txt",
+
+      # https://github.com/whitequark/parser/issues/1020
+      # These contain consecutive \r characters, followed by \n. Prism only receives
+      # the already modified source buffer which dropped one \r but must know the
+      # original code to parse it correctly.
+      "seattlerb/heredoc_with_extra_carriage_returns_windows.txt",
+      "seattlerb/heredoc_with_only_carriage_returns_windows.txt",
+      "seattlerb/heredoc_with_only_carriage_returns.txt",
     ]
 
     # These files are either failing to parse or failing to translate, so we'll
     # skip them for now.
     skip_all = skip_incorrect | [
       "unescaping.txt",
-      "seattlerb/bug190.txt",
-      "seattlerb/heredoc_with_extra_carriage_returns_windows.txt",
-      "seattlerb/heredoc_with_only_carriage_returns_windows.txt",
-      "seattlerb/heredoc_with_only_carriage_returns.txt",
       "seattlerb/pctW_lineno.txt",
       "seattlerb/regexp_esc_C_slash.txt",
       "unparser/corpus/literal/literal.txt",
@@ -207,15 +214,14 @@ module Prism
 
     def assert_equal_tokens(expected_tokens, actual_tokens)
       if expected_tokens != actual_tokens
-        expected_index = 0
-        actual_index = 0
+        index = 0
+        max_index = [expected_tokens, actual_tokens].map(&:size).max
 
-        while expected_index < expected_tokens.length
-          expected_token = expected_tokens[expected_index]
-          actual_token = actual_tokens.fetch(actual_index, [])
+        while index <= max_index
+          expected_token = expected_tokens.fetch(index, [])
+          actual_token = actual_tokens.fetch(index, [])
 
-          expected_index += 1
-          actual_index += 1
+          index += 1
 
           # There are a lot of tokens that have very specific meaning according
           # to the context of the parser. We don't expose that information in

@@ -40,7 +40,6 @@ class OpenSSL::TestSSL < OpenSSL::SSLTestCase
 
   def test_ctx_options_config
     omit "LibreSSL does not support OPENSSL_CONF" if libressl?
-    omit "OpenSSL < 1.1.1 does not support system_default" if openssl? && !openssl?(1, 1, 1)
 
     Tempfile.create("openssl.cnf") { |f|
       f.puts(<<~EOF)
@@ -256,11 +255,16 @@ class OpenSSL::TestSSL < OpenSSL::SSLTestCase
         ssl.syswrite(str)
         assert_equal(str, ssl.sysread(str.bytesize))
 
-        ssl.timeout = 1
-        assert_raise(IO::TimeoutError) {ssl.read(1)}
+        ssl.timeout = 0.1
+        assert_raise(IO::TimeoutError) { ssl.sysread(1) }
 
         ssl.syswrite(str)
         assert_equal(str, ssl.sysread(str.bytesize))
+
+        buf = "orig".b
+        assert_raise(IO::TimeoutError) { ssl.sysread(1, buf) }
+        assert_equal("orig", buf)
+        assert_nothing_raised { buf.clear }
       end
     end
   end
@@ -394,7 +398,8 @@ class OpenSSL::TestSSL < OpenSSL::SSLTestCase
     vflag = OpenSSL::SSL::VERIFY_PEER|OpenSSL::SSL::VERIFY_FAIL_IF_NO_PEER_CERT
     start_server(verify_mode: vflag,
       ctx_proc: proc { |ctx|
-        ctx.max_version = OpenSSL::SSL::TLS1_2_VERSION if libressl?(3, 2, 0)
+        # LibreSSL doesn't support client_cert_cb in TLS 1.3
+        ctx.max_version = OpenSSL::SSL::TLS1_2_VERSION if libressl?
     }) { |port|
       ctx = OpenSSL::SSL::SSLContext.new
       ctx.key = @cli_key
@@ -437,7 +442,7 @@ class OpenSSL::TestSSL < OpenSSL::SSLTestCase
   end
 
   def test_client_ca
-    pend "LibreSSL 3.2 has broken client CA support" if libressl?(3, 2, 0)
+    pend "LibreSSL doesn't support certificate_authorities" if libressl?
 
     ctx_proc = Proc.new do |ctx|
       ctx.client_ca = [@ca_cert]
@@ -609,12 +614,9 @@ class OpenSSL::TestSSL < OpenSSL::SSLTestCase
     start_server(accept_proc: proc { |server|
       server_finished = server.finished_message
       server_peer_finished = server.peer_finished_message
-    }, ctx_proc: proc { |ctx|
-      ctx.max_version = OpenSSL::SSL::TLS1_2_VERSION if libressl?(3, 2, 0)
     }) { |port|
       ctx = OpenSSL::SSL::SSLContext.new
       ctx.verify_mode = OpenSSL::SSL::VERIFY_NONE
-      ctx.max_version = :TLS1_2 if libressl?(3, 2, 0) && !libressl?(3, 3, 0)
       server_connect(port, ctx) { |ssl|
         ssl.puts "abc"; ssl.gets
 
@@ -798,7 +800,7 @@ class OpenSSL::TestSSL < OpenSSL::SSLTestCase
 
     # LibreSSL 3.5.0+ doesn't support other wildcard certificates
     # (it isn't required to, as RFC states MAY, not MUST)
-    return if libressl?(3, 5, 0)
+    return if libressl?
 
     assert_equal(true, OpenSSL::SSL.verify_certificate_identity(
       create_cert_with_san('DNS:*baz.example.com'), 'foobaz.example.com'))
@@ -924,7 +926,7 @@ class OpenSSL::TestSSL < OpenSSL::SSLTestCase
   end
 
   def test_keylog_cb
-    pend "Keylog callback is not supported" if !openssl?(1, 1, 1) || libressl?
+    omit "Keylog callback is not supported" if libressl?
 
     prefix = 'CLIENT_RANDOM'
     context = OpenSSL::SSL::SSLContext.new
@@ -944,30 +946,28 @@ class OpenSSL::TestSSL < OpenSSL::SSLTestCase
       end
     end
 
-    if tls13_supported?
-      prefixes = [
-        'SERVER_HANDSHAKE_TRAFFIC_SECRET',
-        'EXPORTER_SECRET',
-        'SERVER_TRAFFIC_SECRET_0',
-        'CLIENT_HANDSHAKE_TRAFFIC_SECRET',
-        'CLIENT_TRAFFIC_SECRET_0',
-      ]
-      context = OpenSSL::SSL::SSLContext.new
-      context.min_version = context.max_version = OpenSSL::SSL::TLS1_3_VERSION
-      cb_called = false
-      context.keylog_cb = proc do |_sock, line|
-        cb_called = true
-        assert_not_nil(prefixes.delete(line.split.first))
-      end
+    prefixes = [
+      'SERVER_HANDSHAKE_TRAFFIC_SECRET',
+      'EXPORTER_SECRET',
+      'SERVER_TRAFFIC_SECRET_0',
+      'CLIENT_HANDSHAKE_TRAFFIC_SECRET',
+      'CLIENT_TRAFFIC_SECRET_0',
+    ]
+    context = OpenSSL::SSL::SSLContext.new
+    context.min_version = context.max_version = OpenSSL::SSL::TLS1_3_VERSION
+    cb_called = false
+    context.keylog_cb = proc do |_sock, line|
+      cb_called = true
+      assert_not_nil(prefixes.delete(line.split.first))
+    end
 
-      start_server do |port|
-        server_connect(port, context) do |ssl|
-          ssl.puts "abc"
-          assert_equal("abc\n", ssl.gets)
-          assert_equal(true, cb_called)
-        end
-        assert_equal(0, prefixes.size)
+    start_server do |port|
+      server_connect(port, context) do |ssl|
+        ssl.puts "abc"
+        assert_equal("abc\n", ssl.gets)
+        assert_equal(true, cb_called)
       end
+      assert_equal(0, prefixes.size)
     end
   end
 
@@ -1077,13 +1077,11 @@ class OpenSSL::TestSSL < OpenSSL::SSLTestCase
 
   def test_verify_hostname_on_connect
     ctx_proc = proc { |ctx|
-      san = "DNS:a.example.com,DNS:*.b.example.com"
-      san += ",DNS:c*.example.com,DNS:d.*.example.com" unless libressl?(3, 2, 2)
       exts = [
         ["keyUsage", "keyEncipherment,digitalSignature", true],
-        ["subjectAltName", san],
+        ["subjectAltName", "DNS:a.example.com,DNS:*.b.example.com," \
+                           "DNS:c*.example.com,DNS:d.*.example.com"],
       ]
-
       ctx.cert = issue_cert(@svr, @svr_key, 4, exts, @ca_cert, @ca_key)
       ctx.key = @svr_key
     }
@@ -1105,7 +1103,6 @@ class OpenSSL::TestSSL < OpenSSL::SSLTestCase
         ["cx.example.com", true],
         ["d.x.example.com", false],
       ].each do |name, expected_ok|
-        next if name.start_with?('cx') if libressl?(3, 2, 2)
         begin
           sock = TCPSocket.new("127.0.0.1", port)
           ssl = OpenSSL::SSL::SSLSocket.new(sock, ctx)
@@ -1209,8 +1206,7 @@ class OpenSSL::TestSSL < OpenSSL::SSLTestCase
       OpenSSL::SSL::TLS1_VERSION,
       OpenSSL::SSL::TLS1_1_VERSION,
       OpenSSL::SSL::TLS1_2_VERSION,
-      # OpenSSL 1.1.1
-      defined?(OpenSSL::SSL::TLS1_3_VERSION) && OpenSSL::SSL::TLS1_3_VERSION,
+      OpenSSL::SSL::TLS1_3_VERSION,
     ].compact
 
     # Prepare for testing & do sanity check
@@ -1270,9 +1266,7 @@ class OpenSSL::TestSSL < OpenSSL::SSLTestCase
       OpenSSL::SSL::TLS1_VERSION => { name: "TLSv1", method: "TLSv1" },
       OpenSSL::SSL::TLS1_1_VERSION => { name: "TLSv1.1", method: "TLSv1_1" },
       OpenSSL::SSL::TLS1_2_VERSION => { name: "TLSv1.2", method: "TLSv1_2" },
-      # OpenSSL 1.1.1
-      defined?(OpenSSL::SSL::TLS1_3_VERSION) && OpenSSL::SSL::TLS1_3_VERSION =>
-      { name: "TLSv1.3", method: nil },
+      OpenSSL::SSL::TLS1_3_VERSION => { name: "TLSv1.3", method: nil },
     }
 
     # Server enables a single version
@@ -1386,10 +1380,8 @@ class OpenSSL::TestSSL < OpenSSL::SSLTestCase
     # applications. The purpose of this test case is to check that SSL options
     # are properly propagated to OpenSSL library.
     supported = check_supported_protocol_versions
-    if !defined?(OpenSSL::SSL::TLS1_3_VERSION) ||
-        !supported.include?(OpenSSL::SSL::TLS1_2_VERSION) ||
-        !supported.include?(OpenSSL::SSL::TLS1_3_VERSION) ||
-        !defined?(OpenSSL::SSL::OP_NO_TLSv1_3) # LibreSSL < 3.4
+    if !supported.include?(OpenSSL::SSL::TLS1_2_VERSION) ||
+        !supported.include?(OpenSSL::SSL::TLS1_3_VERSION)
       pend "this test case requires both TLS 1.2 and TLS 1.3 to be supported " \
         "and enabled by default"
     end
@@ -1727,11 +1719,6 @@ class OpenSSL::TestSSL < OpenSSL::SSLTestCase
   end
 
   def test_ciphersuites_method_tls_connection
-    ssl_ctx = OpenSSL::SSL::SSLContext.new
-    if !tls13_supported? || !ssl_ctx.respond_to?(:ciphersuites=)
-      pend 'TLS 1.3 not supported'
-    end
-
     csuite = ['TLS_AES_128_GCM_SHA256', 'TLSv1.3', 128, 128]
     inputs = [csuite[0], [csuite[0]], [csuite]]
 
@@ -1743,11 +1730,7 @@ class OpenSSL::TestSSL < OpenSSL::SSLTestCase
 
         server_connect(port, cli_ctx) do |ssl|
           assert_equal('TLSv1.3', ssl.ssl_version)
-          if libressl?(3, 4, 0) && !libressl?(3, 5, 0)
-            assert_equal("AEAD-AES128-GCM-SHA256", ssl.cipher[0])
-          else
-            assert_equal(csuite[0], ssl.cipher[0])
-          end
+          assert_equal(csuite[0], ssl.cipher[0])
           ssl.puts('abc'); assert_equal("abc\n", ssl.gets)
         end
       end
@@ -1756,23 +1739,17 @@ class OpenSSL::TestSSL < OpenSSL::SSLTestCase
 
   def test_ciphersuites_method_nil_argument
     ssl_ctx = OpenSSL::SSL::SSLContext.new
-    pend 'ciphersuites= method is missing' unless ssl_ctx.respond_to?(:ciphersuites=)
-
     assert_nothing_raised { ssl_ctx.ciphersuites = nil }
   end
 
   def test_ciphersuites_method_frozen_object
     ssl_ctx = OpenSSL::SSL::SSLContext.new
-    pend 'ciphersuites= method is missing' unless ssl_ctx.respond_to?(:ciphersuites=)
-
     ssl_ctx.freeze
     assert_raise(FrozenError) { ssl_ctx.ciphersuites = 'TLS_AES_256_GCM_SHA384' }
   end
 
   def test_ciphersuites_method_bogus_csuite
     ssl_ctx = OpenSSL::SSL::SSLContext.new
-    pend 'ciphersuites= method is missing' unless ssl_ctx.respond_to?(:ciphersuites=)
-
     assert_raise_with_message(
       OpenSSL::SSL::SSLError,
       /SSL_CTX_set_ciphersuites: no cipher match/i
@@ -1888,8 +1865,6 @@ class OpenSSL::TestSSL < OpenSSL::SSLTestCase
   end
 
   def test_ecdh_curves_tls13
-    pend "TLS 1.3 not supported" unless tls13_supported?
-
     ctx_proc = -> ctx {
       # Assume TLS 1.3 is enabled and chosen by default
       ctx.ecdh_curves = "P-384:P-521"

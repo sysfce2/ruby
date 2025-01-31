@@ -19,6 +19,11 @@ The following bundled gems are promoted from default gems.
 * pstore 0.1.4
 * benchmark 0.4.0
 * logger 1.6.5
+* rdoc 6.11.0
+* win32ole 1.9.1
+* irb 1.15.1
+* reline 0.6.0
+* readline 0.0.4
 
 We only list stdlib changes that are notable feature changes.
 
@@ -34,6 +39,7 @@ The following default gems are updated.
 * bundler 2.7.0.dev
 * fiddle 1.1.7.dev
 * prism 1.3.0
+* psych 5.2.3
 * stringio 3.1.3.dev
 
 The following bundled gems are added.
@@ -44,6 +50,7 @@ The following bundled gems are updated.
 * net-imap 0.5.5
 * rbs 3.8.1
 * bigdecimal 3.1.9
+* repl_type_completor 0.1.10
 
 ## Supported platforms
 

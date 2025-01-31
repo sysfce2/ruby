@@ -571,7 +571,7 @@ rb_current_ec_set(rb_execution_context_t *ec)
 }
 
 
-#ifdef __APPLE__
+#if defined(__arm64__) || defined(__aarch64__)
 rb_execution_context_t *
 rb_current_ec(void)
 {
@@ -2918,8 +2918,6 @@ rb_vm_update_references(void *ptr)
     if (ptr) {
         rb_vm_t *vm = ptr;
 
-        rb_gc_update_tbl_refs(vm->ci_table);
-        rb_gc_update_tbl_refs(vm->frozen_strings);
         vm->mark_object_ary = rb_gc_location(vm->mark_object_ary);
         vm->load_path = rb_gc_location(vm->load_path);
         vm->load_path_snapshot = rb_gc_location(vm->load_path_snapshot);
@@ -2935,8 +2933,6 @@ rb_vm_update_references(void *ptr)
         vm->loaded_features_realpath_map = rb_gc_location(vm->loaded_features_realpath_map);
         vm->top_self = rb_gc_location(vm->top_self);
         vm->orig_progname = rb_gc_location(vm->orig_progname);
-
-        rb_gc_update_tbl_refs(vm->overloaded_cme_table);
 
         rb_gc_update_values(RUBY_NSIG, vm->trap_list.cmd);
 
@@ -3958,7 +3954,8 @@ Init_VM(void)
     fcore = rb_class_new(rb_cBasicObject);
     rb_set_class_path(fcore, rb_cRubyVM, "FrozenCore");
     rb_vm_register_global_object(rb_class_path_cached(fcore));
-    RBASIC(fcore)->flags = T_ICLASS;
+    RB_FL_UNSET_RAW(fcore, T_MASK);
+    RB_FL_SET_RAW(fcore, T_ICLASS);
     klass = rb_singleton_class(fcore);
     rb_define_method_id(klass, id_core_set_method_alias, m_core_set_method_alias, 3);
     rb_define_method_id(klass, id_core_set_variable_alias, m_core_set_variable_alias, 2);

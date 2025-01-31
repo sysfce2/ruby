@@ -238,8 +238,7 @@ RSpec.describe "bundle install with gem sources" do
     it "loads env plugins" do
       plugin_msg = "hello from an env plugin!"
       create_file "plugins/rubygems_plugin.rb", "puts '#{plugin_msg}'"
-      rubylib = ENV["RUBYLIB"].to_s.split(File::PATH_SEPARATOR).unshift(bundled_app("plugins").to_s).join(File::PATH_SEPARATOR)
-      install_gemfile <<-G, env: { "RUBYLIB" => rubylib }
+      install_gemfile <<-G, env: { "RUBYLIB" => rubylib.unshift(bundled_app("plugins").to_s).join(File::PATH_SEPARATOR) }
         source "https://gem.repo1"
         gem "myrack"
       G
@@ -282,7 +281,7 @@ RSpec.describe "bundle install with gem sources" do
       end
 
       it "installs gems for windows" do
-        simulate_platform x86_mswin32 do
+        simulate_platform "x86-mswin32" do
           install_gemfile <<-G
             source "https://gem.repo1"
             gem "platform_specific"
@@ -290,6 +289,17 @@ RSpec.describe "bundle install with gem sources" do
 
           expect(the_bundle).to include_gems("platform_specific 1.0 x86-mswin32")
         end
+      end
+
+      it "installs gems for aarch64-mingw-ucrt" do
+        simulate_platform "aarch64-mingw-ucrt" do
+          install_gemfile <<-G
+            source "https://gem.repo1"
+            gem "platform_specific"
+          G
+        end
+
+        expect(out).to include("Installing platform_specific 1.0 (aarch64-mingw-ucrt)")
       end
     end
 

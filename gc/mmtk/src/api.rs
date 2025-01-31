@@ -77,6 +77,35 @@ fn mmtk_builder_default_parse_heap_max() -> usize {
     size
 }
 
+fn mmtk_builder_default_parse_heap_mode(heap_min: usize, heap_max: usize) -> GCTriggerSelector {
+    let heap_mode_str = std::env::var("MMTK_HEAP_MODE")
+        .unwrap_or("dynamic".to_string());
+
+    match heap_mode_str.as_str() {
+        "fixed" => GCTriggerSelector::FixedHeapSize(heap_max),
+        "dynamic" => GCTriggerSelector::DynamicHeapSize(heap_min, heap_max),
+        _ => {
+            eprintln!("[FATAL] Invalid MMTK_HEAP_MODE {}", heap_mode_str);
+            std::process::exit(1);
+        }
+    }
+}
+
+fn mmtk_builder_default_parse_plan() -> PlanSelector {
+    let plan_str = std::env::var("MMTK_PLAN")
+        .unwrap_or("MarkSweep".to_string());
+
+    match plan_str.as_str() {
+        "NoGC" => PlanSelector::NoGC,
+        "MarkSweep" => PlanSelector::MarkSweep,
+        "Immix" => PlanSelector::Immix,
+        _ => {
+            eprintln!("[FATAL] Invalid MMTK_PLAN {}", plan_str);
+            std::process::exit(1);
+        }
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn mmtk_builder_default() -> *mut MMTKBuilder {
     let mut builder = MMTKBuilder::new_no_env_vars();
@@ -96,24 +125,9 @@ pub extern "C" fn mmtk_builder_default() -> *mut MMTKBuilder {
         std::process::exit(1);
     }
 
-    let mmtk_mode = match std::env::var("MMTK_HEAP_MODE") {
-        Ok(mode) if (mode == "fixed") => GCTriggerSelector::FixedHeapSize(heap_max),
-        Ok(_) | Err(_) => GCTriggerSelector::DynamicHeapSize(heap_min, heap_max)
-    };
+    builder.options.gc_trigger.set(mmtk_builder_default_parse_heap_mode(heap_min, heap_max));
 
-    // Parse the env var, if it's not found set the plan name to MarkSweep
-    let plan_name = std::env::var("MMTK_PLAN")
-        .unwrap_or(String::from("MarkSweep"));
-
-    // Parse the plan name into a valid MMTK Plan, if the name is not a valid plan use MarkSweep
-    let plan_selector = plan_name.parse::<PlanSelector>()
-        .unwrap_or("MarkSweep".parse::<PlanSelector>().unwrap());
-
-    builder.options.plan.set(plan_selector);
-
-    // Between 1MiB and 500MiB
-    builder.options.gc_trigger.set(mmtk_mode);
-
+    builder.options.plan.set(mmtk_builder_default_parse_plan());
 
     Box::into_raw(Box::new(builder))
 }
@@ -312,6 +326,55 @@ pub extern "C" fn mmtk_starting_heap_address() -> Address {
 #[no_mangle]
 pub extern "C" fn mmtk_last_heap_address() -> Address {
     memory_manager::last_heap_address()
+}
+
+#[no_mangle]
+pub extern "C" fn mmtk_worker_count() -> usize {
+    memory_manager::num_of_workers(mmtk())
+}
+
+#[no_mangle]
+pub extern "C" fn mmtk_plan() -> *const u8 {
+    static NO_GC: &[u8] = b"NoGC\0";
+    static MARK_SWEEP: &[u8] = b"MarkSweep\0";
+    static IMMIX: &[u8] = b"Immix\0";
+
+    match *crate::BINDING.get().unwrap().mmtk.get_options().plan {
+        PlanSelector::NoGC => NO_GC.as_ptr(),
+        PlanSelector::MarkSweep => MARK_SWEEP.as_ptr(),
+        PlanSelector::Immix => IMMIX.as_ptr(),
+        _ => panic!("Unknown plan")
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn mmtk_heap_mode() -> *const u8 {
+    static FIXED_HEAP: &[u8] = b"fixed\0";
+    static DYNAMIC_HEAP: &[u8] = b"dynamic\0";
+
+    match *crate::BINDING.get().unwrap().mmtk.get_options().gc_trigger {
+        GCTriggerSelector::FixedHeapSize(_) => FIXED_HEAP.as_ptr(),
+        GCTriggerSelector::DynamicHeapSize(_, _) => DYNAMIC_HEAP.as_ptr(),
+        _ => panic!("Unknown heap mode")
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn mmtk_heap_min() -> usize {
+    match *crate::BINDING.get().unwrap().mmtk.get_options().gc_trigger {
+        GCTriggerSelector::FixedHeapSize(_) => 0,
+        GCTriggerSelector::DynamicHeapSize(min_size, _) => min_size,
+        _ => panic!("Unknown heap mode")
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn mmtk_heap_max() -> usize {
+    match *crate::BINDING.get().unwrap().mmtk.get_options().gc_trigger {
+        GCTriggerSelector::FixedHeapSize(max_size) => max_size,
+        GCTriggerSelector::DynamicHeapSize(_, max_size) => max_size,
+        _ => panic!("Unknown heap mode")
+    }
 }
 
 // =============== Miscellaneous ===============

@@ -12,6 +12,7 @@ typedef struct JSON_Generator_StateStruct {
     VALUE space_before;
     VALUE object_nl;
     VALUE array_nl;
+    VALUE as_json;
 
     long max_nesting;
     long depth;
@@ -27,11 +28,11 @@ typedef struct JSON_Generator_StateStruct {
 #define RB_UNLIKELY(cond) (cond)
 #endif
 
-static VALUE mJSON, cState, mString_Extend, eGeneratorError, eNestingError, Encoding_UTF_8;
+static VALUE mJSON, cState, cFragment, mString_Extend, eGeneratorError, eNestingError, Encoding_UTF_8;
 
 static ID i_to_s, i_to_json, i_new, i_pack, i_unpack, i_create_id, i_extend, i_encode;
-static ID sym_indent, sym_space, sym_space_before, sym_object_nl, sym_array_nl, sym_max_nesting, sym_allow_nan,
-          sym_ascii_only, sym_depth, sym_buffer_initial_length, sym_script_safe, sym_escape_slash, sym_strict;
+static VALUE sym_indent, sym_space, sym_space_before, sym_object_nl, sym_array_nl, sym_max_nesting, sym_allow_nan,
+             sym_ascii_only, sym_depth, sym_buffer_initial_length, sym_script_safe, sym_escape_slash, sym_strict, sym_as_json;
 
 
 #define GET_STATE_TO(self, state) \
@@ -68,6 +69,7 @@ static void generate_json_integer(FBuffer *buffer, struct generate_json_data *da
 static void generate_json_fixnum(FBuffer *buffer, struct generate_json_data *data, JSON_Generator_State *state, VALUE obj);
 static void generate_json_bignum(FBuffer *buffer, struct generate_json_data *data, JSON_Generator_State *state, VALUE obj);
 static void generate_json_float(FBuffer *buffer, struct generate_json_data *data, JSON_Generator_State *state, VALUE obj);
+static void generate_json_fragment(FBuffer *buffer, struct generate_json_data *data, JSON_Generator_State *state, VALUE obj);
 
 static int usascii_encindex, utf8_encindex, binary_encindex;
 
@@ -647,6 +649,7 @@ static void State_mark(void *ptr)
     rb_gc_mark_movable(state->space_before);
     rb_gc_mark_movable(state->object_nl);
     rb_gc_mark_movable(state->array_nl);
+    rb_gc_mark_movable(state->as_json);
 }
 
 static void State_compact(void *ptr)
@@ -657,6 +660,7 @@ static void State_compact(void *ptr)
     state->space_before = rb_gc_location(state->space_before);
     state->object_nl = rb_gc_location(state->object_nl);
     state->array_nl = rb_gc_location(state->array_nl);
+    state->as_json = rb_gc_location(state->as_json);
 }
 
 static void State_free(void *ptr)
@@ -713,6 +717,7 @@ static void vstate_spill(struct generate_json_data *data)
     RB_OBJ_WRITTEN(vstate, Qundef, state->space_before);
     RB_OBJ_WRITTEN(vstate, Qundef, state->object_nl);
     RB_OBJ_WRITTEN(vstate, Qundef, state->array_nl);
+    RB_OBJ_WRITTEN(vstate, Qundef, state->as_json);
 }
 
 static inline VALUE vstate_get(struct generate_json_data *data)
@@ -971,9 +976,18 @@ static void generate_json_float(FBuffer *buffer, struct generate_json_data *data
     fbuffer_append_str(buffer, tmp);
 }
 
+static void generate_json_fragment(FBuffer *buffer, struct generate_json_data *data, JSON_Generator_State *state, VALUE obj)
+{
+    VALUE fragment = RSTRUCT_GET(obj, 0);
+    Check_Type(fragment, T_STRING);
+    fbuffer_append_str(buffer, fragment);
+}
+
 static void generate_json(FBuffer *buffer, struct generate_json_data *data, JSON_Generator_State *state, VALUE obj)
 {
     VALUE tmp;
+    bool as_json_called = false;
+start:
     if (obj == Qnil) {
         generate_json_null(buffer, data, state, obj);
     } else if (obj == Qfalse) {
@@ -1010,10 +1024,20 @@ static void generate_json(FBuffer *buffer, struct generate_json_data *data, JSON
                 if (klass != rb_cFloat) goto general;
                 generate_json_float(buffer, data, state, obj);
                 break;
+            case T_STRUCT:
+                if (klass != cFragment) goto general;
+                generate_json_fragment(buffer, data, state, obj);
+                break;
             default:
             general:
                 if (state->strict) {
-                    raise_generator_error(obj, "%"PRIsVALUE" not allowed in JSON", CLASS_OF(obj));
+                    if (RTEST(state->as_json) && !as_json_called) {
+                        obj = rb_proc_call_with_block(state->as_json, 1, &obj, Qnil);
+                        as_json_called = true;
+                        goto start;
+                    } else {
+                        raise_generator_error(obj, "%"PRIsVALUE" not allowed in JSON", CLASS_OF(obj));
+                    }
                 } else if (rb_respond_to(obj, i_to_json)) {
                     tmp = rb_funcall(obj, i_to_json, 1, vstate_get(data));
                     Check_Type(tmp, T_STRING);
@@ -1068,8 +1092,19 @@ static VALUE cState_partial_generate(VALUE self, VALUE obj, generator_func func,
     return fbuffer_finalize(&buffer);
 }
 
-static VALUE cState_generate(VALUE self, VALUE obj, VALUE io)
+/* call-seq:
+ *   generate(obj) -> String
+ *   generate(obj, anIO) -> anIO
+ *
+ * Generates a valid JSON document from object +obj+ and returns the
+ * result. If no valid JSON document can be created this method raises a
+ * GeneratorError exception.
+ */
+static VALUE cState_generate(int argc, VALUE *argv, VALUE self)
 {
+    rb_check_arity(argc, 1, 2);
+    VALUE obj = argv[0];
+    VALUE io = argc > 1 ? argv[1] : Qnil;
     VALUE result = cState_partial_generate(self, obj, generate_json, io);
     GET_STATE(self);
     (void)state;
@@ -1103,6 +1138,7 @@ static VALUE cState_init_copy(VALUE obj, VALUE orig)
     objState->space_before = origState->space_before;
     objState->object_nl = origState->object_nl;
     objState->array_nl = origState->array_nl;
+    objState->as_json = origState->as_json;
     return obj;
 }
 
@@ -1254,6 +1290,28 @@ static VALUE cState_array_nl_set(VALUE self, VALUE array_nl)
     return Qnil;
 }
 
+/*
+ * call-seq: as_json()
+ *
+ * This string is put at the end of a line that holds a JSON array.
+ */
+static VALUE cState_as_json(VALUE self)
+{
+    GET_STATE(self);
+    return state->as_json;
+}
+
+/*
+ * call-seq: as_json=(as_json)
+ *
+ * This string is put at the end of a line that holds a JSON array.
+ */
+static VALUE cState_as_json_set(VALUE self, VALUE as_json)
+{
+    GET_STATE(self);
+    RB_OBJ_WRITE(self, &state->as_json, rb_convert_type(as_json, T_DATA, "Proc", "to_proc"));
+    return Qnil;
+}
 
 /*
 * call-seq: check_circular?
@@ -1475,6 +1533,7 @@ static int configure_state_i(VALUE key, VALUE val, VALUE _arg)
     else if (key == sym_script_safe)           { state->script_safe = RTEST(val); }
     else if (key == sym_escape_slash)          { state->script_safe = RTEST(val); }
     else if (key == sym_strict)                { state->strict = RTEST(val); }
+    else if (key == sym_as_json)               { state->as_json = rb_convert_type(val, T_DATA, "Proc", "to_proc"); }
     return ST_CONTINUE;
 }
 
@@ -1535,6 +1594,10 @@ void Init_generator(void)
     rb_require("json/common");
 
     mJSON = rb_define_module("JSON");
+
+    rb_global_variable(&cFragment);
+    cFragment = rb_const_get(mJSON, rb_intern("Fragment"));
+
     VALUE mExt = rb_define_module_under(mJSON, "Ext");
     VALUE mGenerator = rb_define_module_under(mExt, "Generator");
 
@@ -1562,6 +1625,8 @@ void Init_generator(void)
     rb_define_method(cState, "object_nl=", cState_object_nl_set, 1);
     rb_define_method(cState, "array_nl", cState_array_nl, 0);
     rb_define_method(cState, "array_nl=", cState_array_nl_set, 1);
+    rb_define_method(cState, "as_json", cState_as_json, 0);
+    rb_define_method(cState, "as_json=", cState_as_json_set, 1);
     rb_define_method(cState, "max_nesting", cState_max_nesting, 0);
     rb_define_method(cState, "max_nesting=", cState_max_nesting_set, 1);
     rb_define_method(cState, "script_safe", cState_script_safe, 0);
@@ -1582,7 +1647,8 @@ void Init_generator(void)
     rb_define_method(cState, "depth=", cState_depth_set, 1);
     rb_define_method(cState, "buffer_initial_length", cState_buffer_initial_length, 0);
     rb_define_method(cState, "buffer_initial_length=", cState_buffer_initial_length_set, 1);
-    rb_define_private_method(cState, "_generate", cState_generate, 2);
+    rb_define_method(cState, "generate", cState_generate, -1);
+    rb_define_alias(cState, "generate_new", "generate"); // :nodoc:
 
     rb_define_singleton_method(cState, "generate", cState_m_generate, 3);
 
@@ -1653,6 +1719,7 @@ void Init_generator(void)
     sym_script_safe = ID2SYM(rb_intern("script_safe"));
     sym_escape_slash = ID2SYM(rb_intern("escape_slash"));
     sym_strict = ID2SYM(rb_intern("strict"));
+    sym_as_json = ID2SYM(rb_intern("as_json"));
 
     usascii_encindex = rb_usascii_encindex();
     utf8_encindex = rb_utf8_encindex();

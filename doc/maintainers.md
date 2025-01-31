@@ -101,12 +101,6 @@ have commit right, others don't.
 
 ### Libraries
 
-#### lib/benchmark.rb
-
-* *unmaintained*
-* https://github.com/ruby/benchmark
-* https://rubygems.org/gems/benchmark
-
 #### lib/bundler.rb, lib/bundler/*
 
 * Hiroshi SHIBATA ([hsbt])
@@ -180,25 +174,10 @@ have commit right, others don't.
 * https://github.com/ruby/ipaddr
 * https://rubygems.org/gems/ipaddr
 
-#### lib/irb.rb, lib/irb/*
-
-* Stan Lo ([st0012])
-* Tomoya Ishida ([tompng])
-* Mari Imaizumi ([ima1zumi])
-* Hitoshi Hasumi ([hasumikin])
-* https://github.com/ruby/irb
-* https://rubygems.org/gems/irb
-
 #### lib/optparse.rb, lib/optparse/*
 
 * Nobuyuki Nakada ([nobu])
 * https://github.com/ruby/optparse
-
-#### lib/logger.rb
-
-* Naotoshi Seo ([sonots])
-* https://github.com/ruby/logger
-* https://rubygems.org/gems/logger
 
 #### lib/net/http.rb, lib/net/https.rb
 
@@ -243,41 +222,11 @@ have commit right, others don't.
 * https://github.com/ruby/prism
 * https://rubygems.org/gems/prism
 
-#### lib/pstore.rb
-
-* *unmaintained*
-* https://github.com/ruby/pstore
-* https://rubygems.org/gems/pstore
-
-#### lib/readline.rb
-
-* aycabta
-* https://github.com/ruby/readline
-* https://rubygems.org/gems/readline
-
 #### lib/resolv.rb
 
 * Tanaka Akira ([akr])
 * https://github.com/ruby/resolv
 * https://rubygems.org/gems/resolv
-
-#### lib/rdoc.rb, lib/rdoc/*
-
-* Eric Hodel ([drbrain])
-* Hiroshi SHIBATA ([hsbt])
-* Stan Lo ([st0012])
-* Colby Swandale ([colby-swandale])
-* https://github.com/ruby/rdoc
-* https://rubygems.org/gems/rdoc
-
-#### lib/reline.rb, lib/reline/*
-
-* Tomoya Ishida ([tompng])
-* Mari Imaizumi ([ima1zumi])
-* Stan Lo ([st0012])
-* Hitoshi Hasumi ([hasumikin])
-* https://github.com/ruby/reline
-* https://rubygems.org/gems/reline
 
 #### lib/securerandom.rb
 
@@ -453,12 +402,6 @@ have commit right, others don't.
 * https://github.com/ruby/strscan
 * https://rubygems.org/gems/strscan
 
-#### ext/win32ole
-
-* Masaki Suketa ([suketa])
-* https://github.com/ruby/win32ole
-* https://rubygems.org/gems/win32ole
-
 #### ext/zlib
 
 * NARUSE, Yui ([nurse])
@@ -582,6 +525,38 @@ have commit right, others don't.
 #### ostruct
 
 * https://github.com/ruby/ostruct
+
+#### pstore
+
+* https://github.com/ruby/pstore
+
+#### benchmark
+
+* https://github.com/ruby/benchmark
+
+#### logger
+
+* https://github.com/ruby/logger
+
+#### rdoc
+
+* https://github.com/ruby/rdoc
+
+#### win32ole
+
+* https://github.com/ruby/win32ole
+
+#### irb
+
+* https://github.com/ruby/irb
+
+#### reline
+
+* https://github.com/ruby/reline
+
+#### readline
+
+* https://github.com/ruby/readline
 
 ## Platform Maintainers
 
