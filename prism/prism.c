@@ -4253,7 +4253,7 @@ pm_float_node_rational_create(pm_parser_t *parser, const pm_token_t *token) {
     const uint8_t *point = memchr(start, '.', length);
     assert(point && "should have a decimal point");
 
-    uint8_t *digits = malloc(length);
+    uint8_t *digits = xmalloc(length);
     if (digits == NULL) {
         fputs("[pm_float_node_rational_create] Failed to allocate memory", stderr);
         abort();
@@ -4266,7 +4266,7 @@ pm_float_node_rational_create(pm_parser_t *parser, const pm_token_t *token) {
     digits[0] = '1';
     if (end - point > 1) memset(digits + 1, '0', (size_t) (end - point - 1));
     pm_integer_parse(&node->denominator, PM_INTEGER_BASE_DEFAULT, digits, digits + (end - point));
-    free(digits);
+    xfree(digits);
 
     pm_integers_reduce(&node->numerator, &node->denominator);
     return node;
@@ -19607,18 +19607,27 @@ parse_expression_prefix(pm_parser_t *parser, pm_binding_power_t binding_power, b
             pm_token_t lparen;
             pm_token_t rparen;
             pm_node_t *expression;
+
             context_push(parser, PM_CONTEXT_DEFINED);
+            bool newline = accept1(parser, PM_TOKEN_NEWLINE);
 
             if (accept1(parser, PM_TOKEN_PARENTHESIS_LEFT)) {
                 lparen = parser->previous;
-                expression = parse_expression(parser, PM_BINDING_POWER_COMPOSITION, true, false, PM_ERR_DEFINED_EXPRESSION, (uint16_t) (depth + 1));
 
-                if (parser->recovering) {
+                if (newline && accept1(parser, PM_TOKEN_PARENTHESIS_RIGHT)) {
+                    expression = (pm_node_t *) pm_parentheses_node_create(parser, &lparen, NULL, &parser->previous, 0);
+                    lparen = not_provided(parser);
                     rparen = not_provided(parser);
                 } else {
-                    accept1(parser, PM_TOKEN_NEWLINE);
-                    expect1(parser, PM_TOKEN_PARENTHESIS_RIGHT, PM_ERR_EXPECT_RPAREN);
-                    rparen = parser->previous;
+                    expression = parse_expression(parser, PM_BINDING_POWER_COMPOSITION, true, false, PM_ERR_DEFINED_EXPRESSION, (uint16_t) (depth + 1));
+
+                    if (parser->recovering) {
+                        rparen = not_provided(parser);
+                    } else {
+                        accept1(parser, PM_TOKEN_NEWLINE);
+                        expect1(parser, PM_TOKEN_PARENTHESIS_RIGHT, PM_ERR_EXPECT_RPAREN);
+                        rparen = parser->previous;
+                    }
                 }
             } else {
                 lparen = not_provided(parser);

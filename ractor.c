@@ -12,6 +12,7 @@
 #include "internal/error.h"
 #include "internal/gc.h"
 #include "internal/hash.h"
+#include "internal/object.h"
 #include "internal/ractor.h"
 #include "internal/rational.h"
 #include "internal/struct.h"
@@ -1979,14 +1980,6 @@ cancel_single_ractor_mode(void)
     // enable multi-ractor mode
     RUBY_DEBUG_LOG("enable multi-ractor mode");
 
-    VALUE was_disabled = rb_gc_enable();
-
-    rb_gc_start();
-
-    if (was_disabled) {
-        rb_gc_disable();
-    }
-
     ruby_single_main_ractor = NULL;
     rb_funcall(rb_cRactor, rb_intern("_activated"), 0);
 }
@@ -3045,7 +3038,7 @@ rb_obj_traverse(VALUE obj,
 }
 
 static int
-frozen_shareable_p(VALUE obj, bool *made_shareable)
+allow_frozen_shareable_p(VALUE obj)
 {
     if (!RB_TYPE_P(obj, T_DATA)) {
         return true;
@@ -3054,13 +3047,6 @@ frozen_shareable_p(VALUE obj, bool *made_shareable)
         const rb_data_type_t *type = RTYPEDDATA_TYPE(obj);
         if (type->flags & RUBY_TYPED_FROZEN_SHAREABLE) {
             return true;
-        }
-        else if (made_shareable && rb_obj_is_proc(obj)) {
-            // special path to make shareable Proc.
-            rb_proc_ractor_make_shareable(obj);
-            *made_shareable = true;
-            VM_ASSERT(RB_OBJ_SHAREABLE_P(obj));
-            return false;
         }
     }
 
@@ -3071,18 +3057,22 @@ static enum obj_traverse_iterator_result
 make_shareable_check_shareable(VALUE obj)
 {
     VM_ASSERT(!SPECIAL_CONST_P(obj));
-    bool made_shareable = false;
 
     if (rb_ractor_shareable_p(obj)) {
         return traverse_skip;
     }
-    if (!frozen_shareable_p(obj, &made_shareable)) {
-        if (made_shareable) {
-            return traverse_skip;
+    else if (!allow_frozen_shareable_p(obj)) {
+        if (rb_obj_is_proc(obj)) {
+            rb_proc_ractor_make_shareable(obj);
+            return traverse_cont;
         }
         else {
             rb_raise(rb_eRactorError, "can not make shareable object for %"PRIsVALUE, obj);
         }
+    }
+
+    if (RB_TYPE_P(obj, T_IMEMO)) {
+        return traverse_skip;
     }
 
     if (!RB_OBJ_FROZEN_RAW(obj)) {
@@ -3156,7 +3146,7 @@ shareable_p_enter(VALUE obj)
         return traverse_skip;
     }
     else if (RB_OBJ_FROZEN_RAW(obj) &&
-             frozen_shareable_p(obj, NULL)) {
+             allow_frozen_shareable_p(obj)) {
         return traverse_cont;
     }
 
@@ -3549,36 +3539,18 @@ rb_obj_traverse_replace(VALUE obj,
     }
 }
 
-struct RVALUE {
-    VALUE flags;
-    VALUE klass;
-    VALUE v1;
-    VALUE v2;
-    VALUE v3;
+static const bool wb_protected_types[RUBY_T_MASK] = {
+    [T_OBJECT] = RGENGC_WB_PROTECTED_OBJECT,
+    [T_HASH] = RGENGC_WB_PROTECTED_HASH,
+    [T_ARRAY] = RGENGC_WB_PROTECTED_ARRAY,
+    [T_STRING] = RGENGC_WB_PROTECTED_STRING,
+    [T_STRUCT] = RGENGC_WB_PROTECTED_STRUCT,
+    [T_COMPLEX] = RGENGC_WB_PROTECTED_COMPLEX,
+    [T_REGEXP] = RGENGC_WB_PROTECTED_REGEXP,
+    [T_MATCH] = RGENGC_WB_PROTECTED_MATCH,
+    [T_FLOAT] = RGENGC_WB_PROTECTED_FLOAT,
+    [T_RATIONAL] = RGENGC_WB_PROTECTED_RATIONAL,
 };
-
-static const VALUE fl_users = FL_USER1  | FL_USER2  | FL_USER3  |
-                              FL_USER4  | FL_USER5  | FL_USER6  | FL_USER7  |
-                              FL_USER8  | FL_USER9  | FL_USER10 | FL_USER11 |
-                              FL_USER12 | FL_USER13 | FL_USER14 | FL_USER15 |
-                              FL_USER16 | FL_USER17 | FL_USER18 | FL_USER19;
-
-static void
-ractor_moved_bang(VALUE obj)
-{
-    // invalidate src object
-    struct RVALUE *rv = (void *)obj;
-
-    rv->klass = rb_cRactorMovedObject;
-    rv->v1 = 0;
-    rv->v2 = 0;
-    rv->v3 = 0;
-    rv->flags = rv->flags & ~fl_users;
-
-    if (BUILTIN_TYPE(obj) == T_OBJECT) ROBJECT_SET_SHAPE_ID(obj, ROOT_SHAPE_ID);
-
-    // TODO: record moved location
-}
 
 static enum obj_traverse_iterator_result
 move_enter(VALUE obj, struct obj_traverse_replace_data *data)
@@ -3588,39 +3560,32 @@ move_enter(VALUE obj, struct obj_traverse_replace_data *data)
         return traverse_skip;
     }
     else {
-        VALUE moved = rb_obj_alloc(RBASIC_CLASS(obj));
-        rb_shape_set_shape(moved, rb_shape_get_shape(obj));
-        data->replacement = moved;
+        VALUE type = RB_BUILTIN_TYPE(obj);
+        type |= wb_protected_types[type] ? FL_WB_PROTECTED : 0;
+        NEWOBJ_OF(moved, struct RBasic, 0, type, rb_gc_obj_slot_size(obj), 0);
+        data->replacement = (VALUE)moved;
         return traverse_cont;
     }
 }
 
-void rb_replace_generic_ivar(VALUE clone, VALUE obj); // variable.c
-
 static enum obj_traverse_iterator_result
 move_leave(VALUE obj, struct obj_traverse_replace_data *data)
 {
-    VALUE v = data->replacement;
-    struct RVALUE *dst = (struct RVALUE *)v;
-    struct RVALUE *src = (struct RVALUE *)obj;
+    size_t size = rb_gc_obj_slot_size(obj);
+    memcpy((void *)data->replacement, (void *)obj, size);
+    FL_UNSET_RAW(data->replacement, FL_SEEN_OBJ_ID);
 
-    dst->flags = (dst->flags & ~fl_users) | (src->flags & fl_users);
-
-    dst->v1 = src->v1;
-    dst->v2 = src->v2;
-    dst->v3 = src->v3;
+    void rb_replace_generic_ivar(VALUE clone, VALUE obj); // variable.c
 
     if (UNLIKELY(FL_TEST_RAW(obj, FL_EXIVAR))) {
-        rb_replace_generic_ivar(v, obj);
+        rb_replace_generic_ivar(data->replacement, obj);
     }
 
-    if (OBJ_FROZEN(obj)) {
-        OBJ_FREEZE(v);
-    }
-
-    // TODO: generic_ivar
-
-    ractor_moved_bang(obj);
+    // Avoid mutations using bind_call, etc.
+    // We keep FL_SEEN_OBJ_ID so GC later clean the obj_id_table.
+    MEMZERO((char *)obj + sizeof(struct RBasic), char, size - sizeof(struct RBasic));
+    RBASIC(obj)->flags = T_OBJECT | FL_FREEZE | (RBASIC(obj)->flags & FL_SEEN_OBJ_ID);
+    RBASIC_SET_CLASS_RAW(obj, rb_cRactorMovedObject);
     return traverse_cont;
 }
 

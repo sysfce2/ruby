@@ -56,6 +56,16 @@ Parser::AST::Node.prepend(
 
 module Prism
   class ParserTest < TestCase
+    # These files contain code with valid syntax that can't be parsed.
+    skip_syntax_error = [
+      # alias/undef with %s(abc) symbol literal
+      "alias.txt",
+      "seattlerb/bug_215.txt",
+
+      # 1.. && 2
+      "ranges.txt",
+    ]
+
     # These files contain code that is being parsed incorrectly by the parser
     # gem, and therefore we don't want to compare against our translation.
     skip_incorrect = [
@@ -127,14 +137,13 @@ module Prism
       "whitequark/newline_in_hash_argument.txt",
       "whitequark/pattern_matching_expr_in_paren.txt",
       "whitequark/pattern_matching_hash.txt",
-      "whitequark/pin_expr.txt",
       "whitequark/ruby_bug_14690.txt",
       "whitequark/ruby_bug_9669.txt",
       "whitequark/space_args_arg_block.txt",
       "whitequark/space_args_block.txt"
     ]
 
-    Fixture.each do |fixture|
+    Fixture.each(except: skip_syntax_error) do |fixture|
       define_method(fixture.test_name) do
         assert_equal_parses(
           fixture,
@@ -191,11 +200,7 @@ module Prism
       parser.diagnostics.all_errors_are_fatal = true
 
       expected_ast, expected_comments, expected_tokens =
-        begin
-          ignore_warnings { parser.tokenize(buffer) }
-        rescue ArgumentError, Parser::SyntaxError
-          return
-        end
+        ignore_warnings { parser.tokenize(buffer) }
 
       actual_ast, actual_comments, actual_tokens =
         ignore_warnings { Prism::Translation::Parser33.new.tokenize(buffer) }

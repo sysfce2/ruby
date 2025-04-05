@@ -7,6 +7,9 @@ Note that each entry is kept to a minimum, see links for details.
 
 ## Language changes
 
+* `*nil` no longer calls `nil.to_a`, similar to how `**nil` does
+  not call `nil.to_hash`.  [[Feature #21047]]
+
 ## Core classes updates
 
 Note: We're only listing outstanding class updates.
@@ -29,10 +32,10 @@ The following bundled gems are promoted from default gems.
 * ostruct 0.6.1
 * pstore 0.2.0
 * benchmark 0.4.0
-* logger 1.6.6
-* rdoc 6.12.0
+* logger 1.7.0
+* rdoc 6.13.1
 * win32ole 1.9.1
-* irb 1.15.1
+* irb 1.15.2
 * reline 0.6.0
 * readline 0.0.4
 * fiddle 1.1.6
@@ -54,7 +57,7 @@ The following default gems are updated.
 * optparse 0.7.0.dev.2
 * prism 1.4.0
 * psych 5.2.3
-* stringio 3.1.6.dev
+* stringio 3.1.6
 * uri 1.0.3
 
 The following bundled gems are added.
@@ -66,10 +69,11 @@ The following bundled gems are updated.
 * rexml 3.4.1
 * net-imap 0.5.6
 * net-smtp 0.5.1
-* rbs 3.8.1
+* rbs 3.9.2
 * bigdecimal 3.1.9
 * syslog 0.3.0
-* repl_type_completor 0.1.10
+* csv 3.3.3
+* repl_type_completor 0.1.11
 
 ## Supported platforms
 
@@ -84,4 +88,5 @@ The following bundled gems are updated.
 ## JIT
 
 [Feature #19908]: https://bugs.ruby-lang.org/issues/19908
+[Feature #21047]: https://bugs.ruby-lang.org/issues/21047
 [Bug #21049]:     https://bugs.ruby-lang.org/issues/21049

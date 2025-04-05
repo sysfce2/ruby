@@ -2711,13 +2711,17 @@ rb_hash_except(int argc, VALUE *argv, VALUE hash)
  *  call-seq:
  *    values_at(*keys) -> new_array
  *
- *  Returns a new Array containing values for the given +keys+:
+ *  Returns a new array containing values for the given +keys+:
+ *
  *    h = {foo: 0, bar: 1, baz: 2}
  *    h.values_at(:baz, :foo) # => [2, 0]
  *
  *  The {hash default}[rdoc-ref:Hash@Hash+Default] is returned
  *  for each key that is not found:
+ *
  *    h.values_at(:hello, :foo) # => [nil, 0]
+ *
+ *  Related: see {Methods for Fetching}[rdoc-ref:Hash@Methods+for+Fetching].
  */
 
 static VALUE
@@ -3325,13 +3329,97 @@ static int flatten_i(VALUE key, VALUE val, VALUE ary);
 
 /*
  *  call-seq:
- *    transform_keys! {|key| ... } -> self
- *    transform_keys!(hash2) -> self
- *    transform_keys!(hash2) {|other_key| ...} -> self
+ *    transform_keys! {|old_key| ... } -> self
+ *    transform_keys!(other_hash) -> self
+ *    transform_keys!(other_hash) {|old_key| ...} -> self
  *    transform_keys! -> new_enumerator
  *
- *  Same as Hash#transform_keys but modifies the receiver in place
- *  instead of returning a new hash.
+ *  With an argument, a block, or both given,
+ *  derives keys from the argument, the block, and +self+;
+ *  all, some, or none of the keys in +self+ may be changed.
+ *
+ *  With a block given and no argument,
+ *  derives keys only from the block;
+ *  all, some, or none of the keys in +self+ may be changed.
+ *
+ *  For each key/value pair <tt>old_key/value</tt> in +self+, calls the block with +old_key+;
+ *  the block's return value becomes +new_key+;
+ *  removes the entry for +old_key+: <tt>self.delete(old_key)</tt>;
+ *  sets <tt>self[new_key] = value</tt>;
+ *  a duplicate key overwrites:
+ *
+ *      h = {foo: 0, bar: 1, baz: 2}
+ *      h.transform_keys! {|old_key| old_key.to_s }
+ *      # => {"foo" => 0, "bar" => 1, "baz" => 2}
+ *      h = {foo: 0, bar: 1, baz: 2}
+ *      h.transform_keys! {|old_key| 'xxx' }
+ *      # => {"xxx" => 2}
+ *
+ *  With argument +other_hash+ given and no block,
+ *  derives keys for +self+ from +other_hash+ and +self+;
+ *  all, some, or none of the keys in +self+ may be changed.
+ *
+ *  For each key/value pair <tt>old_key/old_value</tt> in +self+,
+ *  looks for key +old_key+ in +other_hash+:
+ *
+ *  - If +old_key+ is found, takes value <tt>other_hash[old_key]</tt> as +new_key+;
+ *    removes the entry for +old_key+: <tt>self.delete(old_key)</tt>;
+ *    sets <tt>self[new_key] = value</tt>;
+ *    a duplicate key overwrites:
+ *
+ *      h = {foo: 0, bar: 1, baz: 2}
+ *      h.transform_keys!(baz: :BAZ, bar: :BAR, foo: :FOO)
+ *      # => {FOO: 0, BAR: 1, BAZ: 2}
+ *      h = {foo: 0, bar: 1, baz: 2}
+ *      h.transform_keys!(baz: :FOO, bar: :FOO, foo: :FOO)
+ *      # => {FOO: 2}
+ *
+ *  - If +old_key+ is not found, does nothing:
+ *
+ *      h = {foo: 0, bar: 1, baz: 2}
+ *      h.transform_keys!({})
+ *      # => {foo: 0, bar: 1, baz: 2}
+ *      h.transform_keys!(baz: :foo)
+ *      # => {foo: 2, bar: 1}
+ *
+ *  Unused keys in +other_hash+ are ignored:
+ *
+ *    h = {foo: 0, bar: 1, baz: 2}
+ *    h.transform_keys!(bat: 3)
+ *    # => {foo: 0, bar: 1, baz: 2}
+ *
+ *  With both argument +other_hash+ and a block given,
+ *  derives keys from +other_hash+, the block, and +self+;
+ *  all, some, or none of the keys in +self+ may be changed.
+ *
+ *  For each pair +old_key+ and +value+ in +self+:
+ *
+ *  - If +other_hash+ has key +old_key+ (with value +new_key+),
+ *    does not call the block for that key;
+ *    removes the entry for +old_key+: <tt>self.delete(old_key)</tt>;
+ *    sets <tt>self[new_key] = value</tt>;
+ *    a duplicate key overwrites:
+ *
+ *      h = {foo: 0, bar: 1, baz: 2}
+ *      h.transform_keys!(baz: :BAZ, bar: :BAR, foo: :FOO) {|key| fail 'Not called' }
+ *      # => {FOO: 0, BAR: 1, BAZ: 2}
+ *
+ *  - If +other_hash+ does not have key +old_key+,
+ *    calls the block with +old_key+ and takes its return value as +new_key+;
+ *    removes the entry for +old_key+: <tt>self.delete(old_key)</tt>;
+ *    sets <tt>self[new_key] = value</tt>;
+ *    a duplicate key overwrites:
+ *
+ *      h = {foo: 0, bar: 1, baz: 2}
+ *      h.transform_keys!(baz: :BAZ) {|key| key.to_s.reverse }
+ *      # => {"oof" => 0, "rab" => 1, BAZ: 2}
+ *      h = {foo: 0, bar: 1, baz: 2}
+ *      h.transform_keys!(baz: :BAZ) {|key| 'ook' }
+ *      # => {"ook" => 1, BAZ: 2}
+ *
+ *  With no argument and no block given, returns a new Enumerator.
+ *
+ *  Related: see {Methods for Transforming Keys and Values}[rdoc-ref:Hash@Methods+for+Transforming+Keys+and+Values].
  */
 static VALUE
 rb_hash_transform_keys_bang(int argc, VALUE *argv, VALUE hash)
@@ -3734,9 +3822,12 @@ values_i(VALUE key, VALUE value, VALUE ary)
  *  call-seq:
  *    values -> new_array
  *
- *  Returns a new Array containing all values in +self+:
+ *  Returns a new array containing all values in +self+:
+ *
  *    h = {foo: 0, bar: 1, baz: 2}
  *    h.values # => [0, 1, 2]
+ *
+ *  Related: see {Methods for Fetching}[rdoc-ref:Hash@Methods+for+Fetching].
  */
 
 VALUE
@@ -3806,9 +3897,10 @@ rb_hash_search_value(VALUE key, VALUE value, VALUE arg)
 /*
  *  call-seq:
  *    has_value?(value) -> true or false
- *    value?(value) -> true or false
  *
- *  Returns +true+ if +value+ is a value in +self+, otherwise +false+.
+ *  Returns whether +value+ is a value in +self+.
+ *
+ *  Related: {Methods for Querying}[rdoc-ref:Hash@Methods+for+Querying].
  */
 
 static VALUE
@@ -4076,13 +4168,40 @@ rb_hash_update_block_i(VALUE key, VALUE value, VALUE hash)
  *    update(*other_hashes) -> self
  *    update(*other_hashes) { |key, old_value, new_value| ... } -> self
  *
- *  Like Hash#merge, but modifies and returns +self+ instead of a new hash:
+ *  Updates values and/or adds entries to +self+; returns +self+.
  *
- *    season = {AB: 75, H: 20, HR: 3, SO: 17, W: 11, HBP: 3}
- *    today = {AB: 3, H: 1, W: 1}
- *    yesterday = {AB: 4, H: 2, HR: 1}
- *    season.update(yesterday, today) {|key, old_value, new_value| old_value + new_value }
- *    # => {AB: 82, H: 23, HR: 4, SO: 17, W: 12, HBP: 3}
+ *  Each argument +other_hash+ in +other_hashes+ must be a hash.
+ *
+ *  With no block given, for each successive entry +key+/+new_value+ in each successive +other_hash+:
+ *
+ *  - If +key+ is in +self+, sets <tt>self[key] = new_value</tt>, whose position is unchanged:
+ *
+ *      h0 = {foo: 0, bar: 1, baz: 2}
+ *      h1 = {bar: 3, foo: -1}
+ *      h0.update(h1) # => {foo: -1, bar: 3, baz: 2}
+ *
+ *  - If +key+ is not in +self+, adds the entry at the end of +self+:
+ *
+ *      h = {foo: 0, bar: 1, baz: 2}
+ *      h.update({bam: 3, bah: 4}) # => {foo: 0, bar: 1, baz: 2, bam: 3, bah: 4}
+ *
+ *  With a block given, for each successive entry +key+/+new_value+ in each successive +other_hash+:
+ *
+ *  - If +key+ is in +self+, fetches +old_value+ from <tt>self[key]</tt>,
+ *    calls the block with +key+, +old_value+, and +new_value+,
+ *    and sets <tt>self[key] = new_value</tt>, whose position is unchanged  :
+ *
+ *      season = {AB: 75, H: 20, HR: 3, SO: 17, W: 11, HBP: 3}
+ *      today = {AB: 3, H: 1, W: 1}
+ *      yesterday = {AB: 4, H: 2, HR: 1}
+ *      season.update(yesterday, today) {|key, old_value, new_value| old_value + new_value }
+ *      # => {AB: 82, H: 23, HR: 4, SO: 17, W: 12, HBP: 3}
+ *
+ *  - If +key+ is not in +self+, adds the entry at the end of +self+:
+ *
+ *      h = {foo: 0, bar: 1, baz: 2}
+ *      h.update({bat: 3}) { fail 'Cannot happen' }
+ *      # => {foo: 0, bar: 1, baz: 2, bat: 3}
  *
  *  Related: see {Methods for Assigning}[rdoc-ref:Hash@Methods+for+Assigning].
  */
@@ -6780,27 +6899,28 @@ static const rb_data_type_t env_data_type = {
 };
 
 /*
- *  A +Hash+ maps each of its unique keys to a specific value.
+ *  A \Hash object maps each of its unique keys to a specific value.
  *
- *  A +Hash+ has certain similarities to an Array, but:
- *  - An Array index is always an Integer.
- *  - A +Hash+ key can be (almost) any object.
+ *  A hash has certain similarities to an Array, but:
+
+ *  - An array index is always an integer.
+ *  - A hash key can be (almost) any object.
  *
- *  === +Hash+ \Data Syntax
+ *  === \Hash \Data Syntax
  *
- *  The older syntax for +Hash+ data uses the "hash rocket," <tt>=></tt>:
+ *  The original syntax for a hash entry uses the "hash rocket," <tt>=></tt>:
  *
  *    h = {:foo => 0, :bar => 1, :baz => 2}
  *    h # => {foo: 0, bar: 1, baz: 2}
  *
- *  Alternatively, but only for a +Hash+ key that's a Symbol,
+ *  Alternatively, but only for a key that's a symbol,
  *  you can use a newer JSON-style syntax,
- *  where each bareword becomes a Symbol:
+ *  where each bareword becomes a symbol:
  *
  *    h = {foo: 0, bar: 1, baz: 2}
  *    h # => {foo: 0, bar: 1, baz: 2}
  *
- *  You can also use a String in place of a bareword:
+ *  You can also use a string in place of a bareword:
  *
  *    h = {'foo': 0, 'bar': 1, 'baz': 2}
  *    h # => {foo: 0, bar: 1, baz: 2}
@@ -6811,12 +6931,12 @@ static const rb_data_type_t env_data_type = {
  *    h # => {foo: 0, bar: 1, baz: 2}
  *
  *  But it's an error to try the JSON-style syntax
- *  for a key that's not a bareword or a String:
+ *  for a key that's not a bareword or a string:
  *
  *    # Raises SyntaxError (syntax error, unexpected ':', expecting =>):
  *    h = {0: 'zero'}
  *
- *  +Hash+ value can be omitted, meaning that value will be fetched from the context
+ *  The value can be omitted, meaning that value will be fetched from the context
  *  by the name of the key:
  *
  *    x = 0
@@ -6826,24 +6946,24 @@ static const rb_data_type_t env_data_type = {
  *
  *  === Common Uses
  *
- *  You can use a +Hash+ to give names to objects:
+ *  You can use a hash to give names to objects:
  *
  *    person = {name: 'Matz', language: 'Ruby'}
  *    person # => {name: "Matz", language: "Ruby"}
  *
- *  You can use a +Hash+ to give names to method arguments:
+ *  You can use a hash to give names to method arguments:
  *
  *    def some_method(hash)
  *      p hash
  *    end
  *    some_method({foo: 0, bar: 1, baz: 2}) # => {foo: 0, bar: 1, baz: 2}
  *
- *  Note: when the last argument in a method call is a +Hash+,
+ *  Note: when the last argument in a method call is a hash,
  *  the curly braces may be omitted:
  *
  *    some_method(foo: 0, bar: 1, baz: 2) # => {foo: 0, bar: 1, baz: 2}
  *
- *  You can use a +Hash+ to initialize an object:
+ *  You can use a hash to initialize an object:
  *
  *    class Dev
  *      attr_accessor :name, :language
@@ -6855,57 +6975,49 @@ static const rb_data_type_t env_data_type = {
  *    matz = Dev.new(name: 'Matz', language: 'Ruby')
  *    matz # => #<Dev: @name="Matz", @language="Ruby">
  *
- *  === Creating a +Hash+
+ *  === Creating a \Hash
  *
- *  You can create a +Hash+ object explicitly with:
+ *  You can create a \Hash object explicitly with:
  *
  *  - A {hash literal}[rdoc-ref:syntax/literals.rdoc@Hash+Literals].
  *
- *  You can convert certain objects to Hashes with:
+ *  You can convert certain objects to hashes with:
  *
- *  - Method #Hash.
+ *  - Method Kernel#Hash.
  *
- *  You can create a +Hash+ by calling method Hash.new.
+ *  You can create a hash by calling method Hash.new:
  *
- *  Create an empty +Hash+:
- *
+ *    # Create an empty hash.
  *    h = Hash.new
  *    h # => {}
  *    h.class # => Hash
  *
- *  You can create a +Hash+ by calling method Hash.[].
+ *  You can create a hash by calling method Hash.[]:
  *
- *  Create an empty +Hash+:
- *
+ *    # Create an empty hash.
  *    h = Hash[]
  *    h # => {}
- *
- *  Create a +Hash+ with initial entries:
- *
+ *    # Create a hash with initial entries.
  *    h = Hash[foo: 0, bar: 1, baz: 2]
  *    h # => {foo: 0, bar: 1, baz: 2}
  *
- *  You can create a +Hash+ by using its literal form (curly braces).
+ *  You can create a hash by using its literal form (curly braces):
  *
- *  Create an empty +Hash+:
- *
+ *    # Create an empty hash.
  *    h = {}
  *    h # => {}
- *
- *  Create a +Hash+ with initial entries:
- *
+ *    # Create a +Hash+ with initial entries.
  *    h = {foo: 0, bar: 1, baz: 2}
  *    h # => {foo: 0, bar: 1, baz: 2}
  *
+ *  === \Hash Value Basics
  *
- *  === +Hash+ Value Basics
- *
- *  The simplest way to retrieve a +Hash+ value (instance method #[]):
+ *  The simplest way to retrieve a hash value (instance method #[]):
  *
  *    h = {foo: 0, bar: 1, baz: 2}
  *    h[:foo] # => 0
  *
- *  The simplest way to create or update a +Hash+ value (instance method #[]=):
+ *  The simplest way to create or update a hash value (instance method #[]=):
  *
  *    h = {foo: 0, bar: 1, baz: 2}
  *    h[:bat] = 3 # => 3
@@ -6913,7 +7025,7 @@ static const rb_data_type_t env_data_type = {
  *    h[:foo] = 4 # => 4
  *    h # => {foo: 4, bar: 1, baz: 2, bat: 3}
  *
- *  The simplest way to delete a +Hash+ entry (instance method #delete):
+ *  The simplest way to delete a hash entry (instance method #delete):
  *
  *    h = {foo: 0, bar: 1, baz: 2}
  *    h.delete(:bar) # => 1
@@ -6921,13 +7033,13 @@ static const rb_data_type_t env_data_type = {
  *
  *  === Entry Order
  *
- *  A +Hash+ object presents its entries in the order of their creation. This is seen in:
+ *  A \Hash object presents its entries in the order of their creation. This is seen in:
  *
  *  - Iterative methods such as <tt>each</tt>, <tt>each_key</tt>, <tt>each_pair</tt>, <tt>each_value</tt>.
  *  - Other order-sensitive methods such as <tt>shift</tt>, <tt>keys</tt>, <tt>values</tt>.
- *  - The String returned by method <tt>inspect</tt>.
+ *  - The string returned by method <tt>inspect</tt>.
  *
- *  A new +Hash+ has its initial ordering per the given entries:
+ *  A new hash has its initial ordering per the given entries:
  *
  *    h = Hash[foo: 0, bar: 1]
  *    h # => {foo: 0, bar: 1}

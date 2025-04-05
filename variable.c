@@ -2165,17 +2165,17 @@ rb_replace_generic_ivar(VALUE clone, VALUE obj)
     RB_VM_LOCK_ENTER();
     {
         st_data_t ivtbl, obj_data = (st_data_t)obj;
-        if (st_lookup(generic_iv_tbl_, (st_data_t)obj, &ivtbl)) {
+        if (st_delete(generic_iv_tbl_, &obj_data, &ivtbl)) {
+            FL_UNSET_RAW(obj, FL_EXIVAR);
+
             st_insert(generic_iv_tbl_, (st_data_t)clone, ivtbl);
-            st_delete(generic_iv_tbl_, &obj_data, NULL);
+            FL_SET_RAW(clone, FL_EXIVAR);
         }
         else {
             rb_bug("unreachable");
         }
     }
     RB_VM_LOCK_LEAVE();
-
-    FL_SET(clone, FL_EXIVAR);
 }
 
 void

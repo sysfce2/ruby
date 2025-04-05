@@ -191,9 +191,7 @@ static void
 rb_mmtk_get_mutators(void (*visit_mutator)(MMTk_Mutator *mutator, void *data), void *data)
 {
     struct objspace *objspace = rb_gc_get_objspace();
-
     struct MMTk_ractor_cache *ractor_cache;
-    RUBY_ASSERT(ractor_cache != NULL);
 
     ccan_list_for_each(&objspace->ractor_caches, ractor_cache, list_node) {
         visit_mutator(ractor_cache->mutator, data);
@@ -1108,16 +1106,21 @@ objspace_obj_id_init(struct objspace *objspace)
 VALUE
 rb_gc_impl_object_id(void *objspace_ptr, VALUE obj)
 {
+    VALUE id;
     struct objspace *objspace = objspace_ptr;
 
     unsigned int lev = rb_gc_vm_lock();
-
-    VALUE id;
-    if (st_lookup(objspace->obj_to_id_tbl, (st_data_t)obj, &id)) {
-        RUBY_ASSERT(FL_TEST(obj, FL_SEEN_OBJ_ID));
+    if (FL_TEST(obj, FL_SEEN_OBJ_ID)) {
+        st_data_t val;
+        if (st_lookup(objspace->obj_to_id_tbl, (st_data_t)obj, &val)) {
+            id = (VALUE)val;
+        }
+        else {
+            rb_bug("rb_gc_impl_object_id: FL_SEEN_OBJ_ID flag set but not found in table");
+        }
     }
     else {
-        RUBY_ASSERT(!FL_TEST(obj, FL_SEEN_OBJ_ID));
+        RUBY_ASSERT(!st_lookup(objspace->obj_to_id_tbl, (st_data_t)obj, NULL));
 
         id = ULL2NUM(objspace->next_object_id);
         objspace->next_object_id += OBJ_ID_INCREMENT;
@@ -1126,7 +1129,6 @@ rb_gc_impl_object_id(void *objspace_ptr, VALUE obj)
         st_insert(objspace->id_to_obj_tbl, (st_data_t)id, (st_data_t)obj);
         FL_SET(obj, FL_SEEN_OBJ_ID);
     }
-
     rb_gc_vm_unlock(lev);
 
     return id;

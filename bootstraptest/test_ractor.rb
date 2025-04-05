@@ -1361,6 +1361,28 @@ assert_equal 'true', %q{
   Ractor.shareable?(pr)
 }
 
+# Ractor.make_shareable(a_proc) makes inner structure shareable and freezes it
+assert_equal 'true,true,true,true', %q{
+  class Proc
+    attr_reader :obj
+    def initialize
+      @obj = Object.new
+    end
+  end
+
+  pr = Ractor.current.instance_eval do
+    Proc.new {}
+  end
+
+  results = []
+  Ractor.make_shareable(pr)
+  results << Ractor.shareable?(pr)
+  results << pr.frozen?
+  results << Ractor.shareable?(pr.obj)
+  results << pr.obj.frozen?
+  results.map(&:to_s).join(',')
+}
+
 # Ractor.shareable?(recursive_objects)
 assert_equal '[false, false]', %q{
   y = []
@@ -1387,6 +1409,21 @@ assert_equal '[C, M]', %q{
   module M; end
 
   Ractor.make_shareable(ary = [C, M])
+}
+
+# Ractor.make_shareable with curried proc checks isolation of original proc
+assert_equal 'isolation error', %q{
+  a = Object.new
+  orig = proc { a }
+  curried = orig.curry
+
+  begin
+    Ractor.make_shareable(curried)
+  rescue Ractor::IsolationError
+    'isolation error'
+  else
+    'no error'
+  end
 }
 
 # define_method() can invoke different Ractor's proc if the proc is shareable.
@@ -1599,7 +1636,7 @@ assert_equal "ok", %q{
 
   1_000.times { idle_worker, tmp_reporter = Ractor.select(*workers) }
   "ok"
-} unless yjit_enabled? # flaky
+} if !yjit_enabled? || ENV['GITHUB_WORKFLOW'] == 'ModGC' # flaky
 
 assert_equal "ok", %q{
   def foo(*); ->{ super }; end
@@ -1949,4 +1986,139 @@ assert_equal 'ok', %q{
   end.each(&:take)
   GC.start
   :ok.itself
+}
+
+# moved objects being corrupted if embeded (String)
+assert_equal 'ok', %q{
+  ractor = Ractor.new { Ractor.receive }
+  obj = "foobarbazfoobarbazfoobarbazfoobarbaz"
+  ractor.send(obj.dup, move: true)
+  roundtripped_obj = ractor.take
+  roundtripped_obj == obj ? :ok : roundtripped_obj
+}
+
+# moved objects being corrupted if embeded (Array)
+assert_equal 'ok', %q{
+  ractor = Ractor.new { Ractor.receive }
+  obj = Array.new(10, 42)
+  ractor.send(obj.dup, move: true)
+  roundtripped_obj = ractor.take
+  roundtripped_obj == obj ? :ok : roundtripped_obj
+}
+
+# moved objects being corrupted if embeded (Hash)
+assert_equal 'ok', %q{
+  ractor = Ractor.new { Ractor.receive }
+  obj = { foo: 1, bar: 2 }
+  ractor.send(obj.dup, move: true)
+  roundtripped_obj = ractor.take
+  roundtripped_obj == obj ? :ok : roundtripped_obj
+}
+
+# moved objects being corrupted if embeded (MatchData)
+assert_equal 'ok', %q{
+  ractor = Ractor.new { Ractor.receive }
+  obj = "foo".match(/o/)
+  ractor.send(obj.dup, move: true)
+  roundtripped_obj = ractor.take
+  roundtripped_obj == obj ? :ok : roundtripped_obj
+}
+
+# moved objects being corrupted if embeded (Struct)
+assert_equal 'ok', %q{
+  ractor = Ractor.new { Ractor.receive }
+  obj = Struct.new(:a, :b, :c, :d, :e, :f).new(1, 2, 3, 4, 5, 6)
+  ractor.send(obj.dup, move: true)
+  roundtripped_obj = ractor.take
+  roundtripped_obj == obj ? :ok : roundtripped_obj
+}
+
+# moved objects being corrupted if embeded (Object)
+assert_equal 'ok', %q{
+  ractor = Ractor.new { Ractor.receive }
+  class SomeObject
+    attr_reader :a, :b, :c, :d, :e, :f
+    def initialize
+      @a = @b = @c = @d = @e = @f = 1
+    end
+
+    def ==(o)
+      @a == o.a &&
+      @b == o.b &&
+      @c == o.c &&
+      @d == o.d &&
+      @e == o.e &&
+      @f == o.f
+    end
+  end
+
+  SomeObject.new # initial non-embeded
+
+  obj = SomeObject.new
+  ractor.send(obj.dup, move: true)
+  roundtripped_obj = ractor.take
+  roundtripped_obj == obj ? :ok : roundtripped_obj
+}
+
+# moved arrays can't be used
+assert_equal 'ok', %q{
+  ractor = Ractor.new { Ractor.receive }
+  obj = [1]
+  ractor.send(obj, move: true)
+  begin
+    [].concat(obj)
+  rescue TypeError
+    :ok
+  else
+    :fail
+  end
+}
+
+# moved strings can't be used
+assert_equal 'ok', %q{
+  ractor = Ractor.new { Ractor.receive }
+  obj = "hello"
+  ractor.send(obj, move: true)
+  begin
+    "".replace(obj)
+  rescue TypeError
+    :ok
+  else
+    :fail
+  end
+}
+
+# moved hashes can't be used
+assert_equal 'ok', %q{
+  ractor = Ractor.new { Ractor.receive }
+  obj = { a: 1 }
+  ractor.send(obj, move: true)
+  begin
+    {}.merge(obj)
+  rescue TypeError
+    :ok
+  else
+    :fail
+  end
+}
+
+# move objects inside frozen containers
+assert_equal 'ok', %q{
+  ractor = Ractor.new { Ractor.receive }
+  obj = Array.new(10, 42)
+  original = obj.dup
+  ractor.send([obj].freeze, move: true)
+  roundtripped_obj = ractor.take[0]
+  roundtripped_obj == original ? :ok : roundtripped_obj
+}
+
+# move object with generic ivar
+assert_equal 'ok', %q{
+  ractor = Ractor.new { Ractor.receive }
+  obj = Array.new(10, 42)
+  obj.instance_variable_set(:@array, [1])
+
+  ractor.send(obj, move: true)
+  roundtripped_obj = ractor.take
+  roundtripped_obj.instance_variable_get(:@array) == [1] ? :ok : roundtripped_obj
 }
